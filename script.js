@@ -1,9 +1,8 @@
-const BACKEND_URL = "https://song-ranker-chi.vercel.app/";
+const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
 
 document.getElementById("loginBtn").onclick = () => {
-  window.location = BACKEND_URL;
+  window.location.href = BACKEND_URL;
 };
-
 
 // Handle callback with code
 const urlParams = new URLSearchParams(window.location.search);
