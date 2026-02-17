@@ -1,8 +1,8 @@
 console.log("JavaScript is running");
 
 // -------------------- Spotify Login --------------------
-const CLIENT_ID = "YOUR_SPOTIFY_CLIENT_ID"; // replace with your app's client ID
-const REDIRECT_URI = "https://YOURUSERNAME.github.io/spotify-ranker/callback.html"; // your GitHub Pages URL
+const CLIENT_ID = "ebfc630b5e9d46d7aca0d68e8f4045a1";
+const REDIRECT_URI = "https://coosqui.github.io/SongRanker/";
 const SCOPES = "playlist-read-private playlist-modify-private";
 
 document.getElementById("loginBtn").onclick = () => {
