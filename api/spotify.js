@@ -1,4 +1,5 @@
 import fetch from "node-fetch";
+import { Buffer } from "buffer";
 
 const CLIENT_ID = "ebfc630b5e9d46d7aca0d68e8f4045a1";
 const CLIENT_SECRET = "8317a110b5ae45c8bbc5e4641aa1b7e3";
