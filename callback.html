@@ -1,11 +1,24 @@
-<script>
-  const hash = window.location.hash.substring(1);
-  const params = new URLSearchParams(hash);
-  const token = params.get("access_token");
-  if (token) {
-    localStorage.setItem("spotifyToken", token);
-    window.location.href = "index.html";
-  } else {
-    document.body.innerText = "Spotify login failed!";
-  }
-</script>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Spotify Callback</title>
+</head>
+<body>
+  <h1>Logging in...</h1>
+  <script>
+    // Get token from URL hash
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const token = params.get("access_token");
+
+    if (token) {
+      // Save token
+      localStorage.setItem("spotifyToken", token);
+      // Redirect to main page
+      window.location.href = "index.html";
+    } else {
+      alert("Spotify login failed!");
+    }
+  </script>
+</body>
+</html>
