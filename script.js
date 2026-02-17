@@ -6,13 +6,13 @@ const REDIRECT_URI = "https://coosqui.github.io/SongRanker/callback.html";
 const SCOPES = "playlist-read-private playlist-modify-private";
 
 document.getElementById("loginBtn").onclick = () => {
-  const url =
-    "https://accounts.spotify.com/authorize" +
-    "?response_type=token" +
-    "&client_id=" + CLIENT_ID +
-    "&scope=" + encodeURIComponent(SCOPES) +
-    "&redirect_uri=" + encodeURIComponent(REDIRECT_URI);
-  window.location = url;
+const url =
+  "https://accounts.spotify.com/authorize" +
+  "?response_type=token" +
+  "&client_id=" + CLIENT_ID +
+  "&scope=" + encodeURIComponent(SCOPES) +
+  "&redirect_uri=" + encodeURIComponent(REDIRECT_URI);
+window.location = url;
 };
 
 // ------------------- Variables -------------------
