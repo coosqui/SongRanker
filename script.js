@@ -1,6 +1,6 @@
 console.log("JavaScript is running");
 
-// -------------------- Spotify Login --------------------
+// ------------------- Spotify Login -------------------
 const CLIENT_ID = "ebfc630b5e9d46d7aca0d68e8f4045a1";
 const REDIRECT_URI = "https://coosqui.github.io/SongRanker/callback.html";
 const SCOPES = "playlist-read-private playlist-modify-private";
@@ -15,44 +15,47 @@ document.getElementById("loginBtn").onclick = () => {
   window.location = url;
 };
 
-// -------------------- Variables --------------------
+// ------------------- Variables -------------------
 let songs = [];
-let left;
-let right;
+let left, right;
 let comparisons = 0;
-const MAX_COMPARISONS = 50; // can adjust
+const MAX_COMPARISONS = 50;
 const pairHistory = {};
 
 const leftBtn = document.getElementById("leftBtn");
 const rightBtn = document.getElementById("rightBtn");
 
-// -------------------- Helper Functions --------------------
+// ------------------- Helpers -------------------
 function pairKey(a, b) {
   return [a.name, b.name].sort().join("|");
 }
 
 function updateElo(winner, loser) {
   const K = 16;
-  const expectedWinner =
-    1 / (1 + Math.pow(10, (loser.rating - winner.rating) / 400));
-  const expectedLoser =
-    1 / (1 + Math.pow(10, (winner.rating - loser.rating) / 400));
-
+  const expectedWinner = 1 / (1 + Math.pow(10, (loser.rating - winner.rating) / 400));
+  const expectedLoser = 1 / (1 + Math.pow(10, (winner.rating - loser.rating) / 400));
   winner.rating += K * (1 - expectedWinner);
   loser.rating += K * (0 - expectedLoser);
 }
 
-// -------------------- Spotify API --------------------
+// ------------------- Spotify API -------------------
+async function fetchUserPlaylists() {
+  const token = localStorage.getItem("spotifyToken");
+  if (!token) return [];
+  const res = await fetch("https://api.spotify.com/v1/me/playlists", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  return data.items;
+}
+
 async function fetchSpotifyTracks(playlistId) {
   const token = localStorage.getItem("spotifyToken");
   if (!token) return [];
-
-  const res = await fetch(
-    `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   const data = await res.json();
-
   return data.items.map(item => ({
     name: item.track.name,
     artist: item.track.artists.map(a => a.name).join(", "),
@@ -61,42 +64,21 @@ async function fetchSpotifyTracks(playlistId) {
   }));
 }
 
-async function fetchUserPlaylists() {
-  const token = localStorage.getItem("spotifyToken");
-  if (!token) return [];
-
-  const res = await fetch("https://api.spotify.com/v1/me/playlists", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await res.json();
-  return data.items; // array of playlists
-}
-
 async function createRankedPlaylist(playlistName) {
   const token = localStorage.getItem("spotifyToken");
-  if (!token) return alert("Please log in to Spotify first");
+  if (!token) return alert("Please log in first.");
 
   const userRes = await fetch("https://api.spotify.com/v1/me", {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const userData = await userRes.json();
   const userId = userData.id;
 
-  const playlistRes = await fetch(
-    `https://api.spotify.com/v1/users/${userId}/playlists`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name: playlistName,
-        description: "Ranked by Song Ranker App",
-        public: false
-      })
-    }
-  );
+  const playlistRes = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: playlistName, description: "Ranked by Song Ranker App", public: false })
+  });
   const playlistData = await playlistRes.json();
   const playlistId = playlistData.id;
 
@@ -107,26 +89,19 @@ async function createRankedPlaylist(playlistName) {
     const chunk = uris.slice(i, i + 100);
     await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ uris: chunk })
     });
   }
-
   alert(`Ranked playlist "${playlistName}" created!`);
 }
 
-// -------------------- Core Logic --------------------
-function start() {
-  nextMatch();
-}
+// ------------------- Ranking Logic -------------------
+function start() { nextMatch(); }
 
 function nextMatch() {
   let bestPair = null;
   let lowestCount = Infinity;
-
   for (let i = 0; i < songs.length; i++) {
     for (let j = i + 1; j < songs.length; j++) {
       const key = pairKey(songs[i], songs[j]);
@@ -137,25 +112,17 @@ function nextMatch() {
       }
     }
   }
-
-  left = bestPair[0];
-  right = bestPair[1];
-
-  leftBtn.innerText = left.name;
-  rightBtn.innerText = right.name;
+  left = bestPair[0]; right = bestPair[1];
+  leftBtn.innerText = left.name; rightBtn.innerText = right.name;
 }
 
 function pickWinner(winner, loser) {
   updateElo(winner, loser);
   const key = pairKey(winner, loser);
   pairHistory[key] = (pairHistory[key] || 0) + 1;
-
   comparisons++;
-  if (comparisons >= MAX_COMPARISONS) {
-    showRanking();
-  } else {
-    nextMatch();
-  }
+  if (comparisons >= MAX_COMPARISONS) showRanking();
+  else nextMatch();
 }
 
 leftBtn.onclick = () => pickWinner(left, right);
@@ -163,27 +130,21 @@ rightBtn.onclick = () => pickWinner(right, left);
 
 function showRanking() {
   document.body.innerHTML = "<h1>Final Ranking</h1>";
-  const sorted = [...songs].sort((a, b) => b.rating - a.rating);
-
-  sorted.forEach((song, index) => {
-    const p = document.createElement("p");
-    p.innerText = `${index + 1}. ${song.name} (${song.rating})`;
+  const sorted = [...songs].sort((a,b)=>b.rating-a.rating);
+  sorted.forEach((song,index)=>{
+    const p=document.createElement("p");
+    p.innerText=`${index+1}. ${song.name} (${song.rating})`;
     document.body.appendChild(p);
   });
-
   const btn = document.createElement("button");
-  btn.innerText = "Create Ranked Spotify Playlist";
+  btn.innerText="Create Ranked Spotify Playlist";
   btn.onclick = () => createRankedPlaylist("My Ranked Playlist");
   document.body.appendChild(btn);
 }
 
-// -------------------- Initialize --------------------
+// ------------------- Initialize -------------------
 async function init() {
-  const tokenFromHash = window.location.hash
-    .substring(1)
-    .split("&")
-    .find(part => part.startsWith("access_token="))
-    ?.split("=")[1];
+  const tokenFromHash = window.location.hash.substring(1).split("&").find(p=>p.startsWith("access_token="))?.split("=")[1];
   if (tokenFromHash) {
     localStorage.setItem("spotifyToken", tokenFromHash);
     window.location.hash = "";
@@ -192,26 +153,23 @@ async function init() {
   const token = localStorage.getItem("spotifyToken");
   if (!token) return;
 
+  // Playlist picker
   const playlists = await fetchUserPlaylists();
-  if (playlists.length === 0) return alert("No playlists found.");
+  if (!playlists.length) return alert("No playlists found.");
 
-  // Show playlist picker
-  const container = document.createElement("div");
-  container.innerHTML = "<h2>Select a playlist to rank:</h2>";
+  const picker = document.getElementById("playlistPicker");
+  picker.innerHTML = "<h2>Select a playlist to rank:</h2>";
   playlists.forEach(pl => {
     const btn = document.createElement("button");
     btn.innerText = pl.name;
     btn.onclick = async () => {
       songs = await fetchSpotifyTracks(pl.id);
-      if (songs.length === 0) alert("No tracks found in playlist.");
-      else {
-        container.remove();
-        start();
-      }
+      if (!songs.length) return alert("No tracks found in this playlist.");
+      picker.remove(); start();
     };
-    container.appendChild(btn);
-    container.appendChild(document.createElement("br"));
+    picker.appendChild(btn);
+    picker.appendChild(document.createElement("br"));
   });
-  document.body.appendChild(container);
 }
 
+init();

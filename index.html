@@ -2,13 +2,27 @@
 <html>
 <head>
   <title>Song Ranker</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+  </style>
 </head>
 <body>
+  <h1>Song Ranker</h1>
 
-  <h1>Which song do you prefer?</h1>
+  <!-- Spotify Login -->
+  <button id="loginBtn">Login with Spotify</button>
 
-  <button id="leftBtn"></button>
-  <button id="rightBtn"></button>
+  <!-- Playlist picker will appear here -->
+  <div id="playlistPicker" style="margin-top:20px;"></div>
+
+  <!-- Pairwise comparison buttons -->
+  <div id="comparison" style="margin-top:20px;">
+    <button id="leftBtn"></button>
+    <button id="rightBtn"></button>
+  </div>
+
+  <!-- Ranking display will replace the body when done -->
 
   <script src="script.js"></script>
 </body>
