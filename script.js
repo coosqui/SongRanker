@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const tokenFromUrl = params.get("token");
 
   if (tokenFromUrl) {
-    // Token speichern
+    // Token speichern im globalen scope (Domain + Root Path)
     localStorage.setItem("spotifyToken", tokenFromUrl);
 
     // URL bereinigen (ohne Reload)
@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     window.history.replaceState({}, document.title, cleanUrl);
   }
 
-  // 2️⃣ Prüfen, ob schon ein Token im Storage ist
+  // 2️⃣ Prüfen, ob Token existiert
   const token = localStorage.getItem("spotifyToken");
   const loginBtn = document.getElementById("loginBtn");
 
@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Token existiert → Button ausblenden
     if (loginBtn) loginBtn.style.display = "none";
   } else {
-    // Kein Token → Login-Button aktiv lassen
+    // Kein Token → Button aktiv lassen
     if (loginBtn) loginBtn.onclick = () => {
       window.location.href = BACKEND_URL;
     };
