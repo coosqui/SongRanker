@@ -1,102 +1,252 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Song Ranker</title>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      margin-top: 50px;
-    }
-    button {
-      margin: 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-    }
+    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+    select { font-size: 16px; margin: 20px; }
   </style>
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
 </head>
 <body>
   <h1>Song Ranker</h1>
 
-  <!-- Buttons -->
-  <button id="loginBtn" type="button">Login with Spotify</button>
-  <button id="logoutBtn" type="button">Logout</button>
+  <!-- Login / Logout -->
+  <button id="loginBtn">Login with Spotify</button>
+  <button id="logoutBtn">Logout</button>
 
-  <div id="playlistPicker"></div>
+  <!-- Playlist selection -->
+  <div id="playlistSelector" style="margin-top:20px;">
+    <select id="playlistDropdown"></select>
+    <button id="startRankingBtn">Start Ranking</button>
+  </div>
+
+  <!-- Comparison buttons -->
   <div id="comparison" style="margin-top:20px;">
     <button id="leftBtn"></button>
     <button id="rightBtn"></button>
   </div>
 
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
-      const loginBtn = document.getElementById("loginBtn");
-      const logoutBtn = document.getElementById("logoutBtn");
+  <!-- Audio Player -->
+  <audio id="audioPlayer" controls style="display:block; margin:20px auto;"></audio>
 
-      // 1️⃣ Token aus URL abholen (nach Login)
-      const params = new URLSearchParams(window.location.search);
-      const accessTokenFromUrl = params.get("access_token");
-      const refreshTokenFromUrl = params.get("refresh_token");
+  <!-- Ranking overview -->
+  <div id="rankingOverview" style="margin-top:30px;"></div>
 
-      if (accessTokenFromUrl) localStorage.setItem("spotifyToken", accessTokenFromUrl);
-      if (refreshTokenFromUrl) localStorage.setItem("spotifyRefreshToken", refreshTokenFromUrl);
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const playlistDropdown = document.getElementById("playlistDropdown");
+  const startRankingBtn = document.getElementById("startRankingBtn");
+  const leftBtn = document.getElementById("leftBtn");
+  const rightBtn = document.getElementById("rightBtn");
+  const audioPlayer = document.getElementById("audioPlayer");
+  const rankingOverview = document.getElementById("rankingOverview");
 
-      // URL bereinigen
-      window.history.replaceState({}, document.title, window.location.pathname);
+  let player, tracks = [], remainingTracks = [], comparisonHistory = [];
 
-      const token = localStorage.getItem("spotifyToken");
-      const refreshToken = localStorage.getItem("spotifyRefreshToken");
+  // --- Login / Token Management ---
+  const params = new URLSearchParams(window.location.search);
+  const accessTokenFromUrl = params.get("access_token");
+  const refreshTokenFromUrl = params.get("refresh_token");
 
-      // 2️⃣ Token existiert → Auto-Redirect + Button Management
-      if (token) {
-        if (loginBtn) loginBtn.style.display = "none";
-        if (logoutBtn) logoutBtn.style.display = "inline-block";
+  if (accessTokenFromUrl) localStorage.setItem("spotifyToken", accessTokenFromUrl);
+  if (refreshTokenFromUrl) localStorage.setItem("spotifyRefreshToken", refreshTokenFromUrl);
+  window.history.replaceState({}, document.title, window.location.pathname);
 
-        // Direkt zur App-Seite, falls noch nicht dort
-        if (window.location.pathname !== "/SongRanker/") {
-          window.location.href = "/SongRanker/";
+  const token = localStorage.getItem("spotifyToken");
+  const refreshToken = localStorage.getItem("spotifyRefreshToken");
+
+  function initUI() {
+    if (token) {
+      loginBtn.style.display = "none";
+      logoutBtn.style.display = "inline-block";
+      playlistDropdown.disabled = false;
+      startRankingBtn.disabled = false;
+    } else {
+      loginBtn.style.display = "inline-block";
+      logoutBtn.style.display = "none";
+      playlistDropdown.disabled = true;
+      startRankingBtn.disabled = true;
+    }
+  }
+
+  initUI();
+  loginBtn.onclick = () => window.location.href = BACKEND_URL;
+  logoutBtn.onclick = () => { localStorage.removeItem("spotifyToken"); localStorage.removeItem("spotifyRefreshToken"); location.reload(); }
+
+  // --- Spotify Web Playback SDK ---
+  function initSpotifyPlayer(token) {
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      player = new Spotify.Player({
+        name: "Song Ranker Player",
+        getOAuthToken: cb => cb(token),
+        volume: 0.5
+      });
+      player.addListener('ready', ({ device_id }) => window.spotifyDeviceId = device_id);
+      player.connect();
+    };
+  }
+
+  if (token) initSpotifyPlayer(token);
+
+  // --- Token Refresh ---
+  if (token && refreshToken) {
+    const TOKEN_EXPIRE_TIME = 3500 * 1000;
+    setTimeout(async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}?refresh=${refreshToken}`);
+        const data = await res.json();
+        if (data.access_token) {
+          localStorage.setItem("spotifyToken", data.access_token);
+          initSpotifyPlayer(data.access_token);
         }
+      } catch (err) { localStorage.removeItem("spotifyToken"); localStorage.removeItem("spotifyRefreshToken"); location.reload(); }
+    }, TOKEN_EXPIRE_TIME);
+  }
 
-        // 3️⃣ Automatisches Refreshen des Tokens ~3500s nach Login
-        const TOKEN_EXPIRE_TIME = 3500 * 1000; // ~58 min
-        setTimeout(async () => {
-          if (refreshToken) {
-            try {
-              const res = await fetch(`${BACKEND_URL}?refresh=${refreshToken}`);
-              const data = await res.json();
-              if (data.access_token) {
-                localStorage.setItem("spotifyToken", data.access_token);
-                console.log("Access Token erfolgreich erneuert");
-              }
-            } catch (err) {
-              console.error("Fehler beim Token-Refresh:", err);
-              localStorage.removeItem("spotifyToken");
-              localStorage.removeItem("spotifyRefreshToken");
-              window.location.href = "/SongRanker/";
-            }
-          }
-        }, TOKEN_EXPIRE_TIME);
+  // --- Fetch Playlists ---
+  async function fetchUserPlaylists() {
+    const res = await fetch("https://api.spotify.com/v1/me/playlists", { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    return data.items;
+  }
+  if (token) {
+    const playlists = await fetchUserPlaylists();
+    playlistDropdown.innerHTML = playlists.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+  }
 
-      } else {
-        // Kein Token → Login sichtbar, Logout ausblenden
-        if (loginBtn) {
-          loginBtn.style.display = "inline-block";
-          loginBtn.onclick = () => { window.location.href = BACKEND_URL; };
-        }
-        if (logoutBtn) logoutBtn.style.display = "none";
-      }
+  // --- Fetch Tracks ---
+  async function fetchPlaylistTracks(playlistId) {
+    const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    return data.items.map(i => ({
+      id: i.track.id,
+      name: i.track.name,
+      artists: i.track.artists.map(a => a.name),
+      uri: i.track.uri,
+      preview_url: i.track.preview_url,
+      elo: 1000
+    }));
+  }
 
-      // 4️⃣ Logout Funktion
-      if (logoutBtn) {
-        logoutBtn.onclick = () => {
-          localStorage.removeItem("spotifyToken");
-          localStorage.removeItem("spotifyRefreshToken");
-          window.location.href = "/SongRanker/";
-        };
-      }
+  // --- Elo Functions ---
+  function updateElo(winner, loser, k=32) {
+    const expectedWinner = 1 / (1 + Math.pow(10, (loser.elo - winner.elo)/400));
+    const expectedLoser = 1 / (1 + Math.pow(10, (winner.elo - loser.elo)/400));
+    winner.elo += k*(1-expectedWinner);
+    loser.elo += k*(0-expectedLoser);
+  }
+
+  // --- Comparison ---
+  function initTracks(trackList) { tracks = trackList; remainingTracks = [...tracks]; comparisonHistory = []; }
+
+  function pickTwoTracks() {
+    if (remainingTracks.length < 2) return null;
+    const shuffled = remainingTracks.sort(() => 0.5 - Math.random());
+    return [shuffled[0], shuffled[1]];
+  }
+
+  async function playTrack(track) {
+    if (player && window.spotifyDeviceId) {
+      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${window.spotifyDeviceId}`, {
+        method:"PUT", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" }, body:JSON.stringify({uris:[track.uri]})
+      });
+    } else if (track.preview_url) { audioPlayer.src = track.preview_url; audioPlayer.play(); }
+    else audioPlayer.src = "";
+  }
+
+  function showComparison(trackA, trackB) {
+    leftBtn.textContent = `${trackA.name} - ${trackA.artists.join(", ")}`;
+    rightBtn.textContent = `${trackB.name} - ${trackB.artists.join(", ")}`;
+    leftBtn.onclick = () => handleChoice(trackA.id, trackB.id);
+    rightBtn.onclick = () => handleChoice(trackB.id, trackA.id);
+    leftBtn.onmouseenter = () => playTrack(trackA);
+    rightBtn.onmouseenter = () => playTrack(trackB);
+  }
+
+  function handleChoice(winnerId, loserId) {
+    const winner = tracks.find(t=>t.id===winnerId);
+    const loser = tracks.find(t=>t.id===loserId);
+    updateElo(winner, loser);
+    comparisonHistory.push({winnerId, loserId});
+    const nextPair = pickTwoTracks();
+    if (nextPair) showComparison(nextPair[0], nextPair[1]);
+    else showRankingOverview();
+  }
+
+  // --- Ranking Overview ---
+  function showRankingOverview() {
+    rankingOverview.innerHTML = "<h2>Ranking Overview</h2>";
+    const ranked = [...tracks].sort((a,b)=>b.elo-a.elo);
+    ranked.forEach((t,i)=>{
+      const div=document.createElement("div");
+      div.innerHTML = `${i+1}. ${t.name} - ${t.artists.join(", ")} (Elo: ${Math.round(t.elo)})`;
+      const btn=document.createElement("button");
+      btn.textContent="Adjust";
+      btn.onclick=()=>reviewSong(t.id);
+      div.appendChild(btn);
+      rankingOverview.appendChild(div);
     });
-  </script>
+
+    // Save Playlist button
+    const saveBtn = document.createElement("button");
+    saveBtn.textContent="Save Ranked Playlist to Spotify";
+    saveBtn.onclick=()=>{
+      const playlistName = prompt("Enter a name for your ranked playlist:","My Ranked Playlist");
+      if(playlistName) saveRankedPlaylist(playlistName, ranked);
+    };
+    rankingOverview.appendChild(saveBtn);
+
+    leftBtn.style.display="none";
+    rightBtn.style.display="none";
+    audioPlayer.style.display="none";
+  }
+
+  function reviewSong(trackId) {
+    const track=tracks.find(t=>t.id===trackId);
+    const opponents=tracks.filter(t=>t.id!==trackId);
+    const opponent=opponents[Math.floor(Math.random()*opponents.length)];
+    leftBtn.style.display="inline-block";
+    rightBtn.style.display="inline-block";
+    audioPlayer.style.display="block";
+    rankingOverview.innerHTML="";
+    showComparison(track, opponent);
+  }
+
+  // --- Save Ranked Playlist ---
+  async function saveRankedPlaylist(name, rankedTracks) {
+    try {
+      const resUser = await fetch("https://api.spotify.com/v1/me",{ headers:{ Authorization:`Bearer ${token}` }});
+      const userData = await resUser.json();
+      const userId = userData.id;
+      const resPlaylist = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
+        method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body:JSON.stringify({name:name,description:"Playlist ranked with Song Ranker",public:false})
+      });
+      const playlist = await resPlaylist.json();
+      const uris = rankedTracks.map(t=>t.uri);
+      await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+        method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body:JSON.stringify({uris})
+      });
+      alert(`Playlist "${name}" created successfully in your Spotify account!`);
+    } catch(err){ console.error(err); alert("Failed to save playlist. Make sure you are logged in."); }
+  }
+
+  // --- Start Ranking ---
+  startRankingBtn.onclick=async()=>{
+    const playlistId = playlistDropdown.value;
+    const playlistTracks = await fetchPlaylistTracks(playlistId);
+    initTracks(playlistTracks);
+    const firstPair = pickTwoTracks();
+    if(firstPair) showComparison(firstPair[0], firstPair[1]);
+  };
+});
+</script>
 </body>
 </html>
