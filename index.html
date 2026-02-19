@@ -25,12 +25,12 @@
 
   <!-- Comparison buttons -->
   <div id="comparison" style="margin-top:20px;">
-    <button id="leftBtn"></button>
-    <button id="rightBtn"></button>
+    <button id="leftBtn" style="display:none;"></button>
+    <button id="rightBtn" style="display:none;"></button>
   </div>
 
   <!-- Audio Player -->
-  <audio id="audioPlayer" controls style="display:block; margin:20px auto;"></audio>
+  <audio id="audioPlayer" controls style="display:none; margin:20px auto;"></audio>
 
   <!-- Ranking overview -->
   <div id="rankingOverview" style="margin-top:30px;"></div>
@@ -111,10 +111,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // --- Fetch Playlists ---
   async function fetchUserPlaylists() {
-    const res = await fetch("https://api.spotify.com/v1/me/playlists", { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    return data.items;
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me/playlists", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      return data.items;
+    } catch(err) {
+      console.error("Failed to fetch playlists:", err);
+      alert("Could not fetch playlists. Please check your login.");
+      return [];
+    }
   }
+
   if (token) {
     const playlists = await fetchUserPlaylists();
     playlistDropdown.innerHTML = playlists.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
@@ -122,16 +129,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // --- Fetch Tracks ---
   async function fetchPlaylistTracks(playlistId) {
-    const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    return data.items.map(i => ({
-      id: i.track.id,
-      name: i.track.name,
-      artists: i.track.artists.map(a => a.name),
-      uri: i.track.uri,
-      preview_url: i.track.preview_url,
-      elo: 1000
-    }));
+    try {
+      const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const validTracks = data.items.filter(i => i.track).map(i => ({
+        id: i.track.id,
+        name: i.track.name,
+        artists: i.track.artists.map(a => a.name),
+        uri: i.track.uri,
+        preview_url: i.track.preview_url,
+        elo: 1000
+      }));
+      return validTracks;
+    } catch(err) { console.error("Failed to fetch tracks:", err); return []; }
   }
 
   // --- Elo Functions ---
@@ -161,8 +171,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function showComparison(trackA, trackB) {
+    console.log("Comparing tracks:", trackA, trackB);
     leftBtn.textContent = `${trackA.name} - ${trackA.artists.join(", ")}`;
     rightBtn.textContent = `${trackB.name} - ${trackB.artists.join(", ")}`;
+    leftBtn.style.display = "inline-block";
+    rightBtn.style.display = "inline-block";
+    audioPlayer.style.display = "block";
+
     leftBtn.onclick = () => handleChoice(trackA.id, trackB.id);
     rightBtn.onclick = () => handleChoice(trackB.id, trackA.id);
     leftBtn.onmouseenter = () => playTrack(trackA);
@@ -193,10 +208,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       rankingOverview.appendChild(div);
     });
 
-    // Save Playlist button
     const saveBtn = document.createElement("button");
     saveBtn.textContent="Save Ranked Playlist to Spotify";
-    saveBtn.onclick=()=>{
+    saveBtn.onclick=()=> {
       const playlistName = prompt("Enter a name for your ranked playlist:","My Ranked Playlist");
       if(playlistName) saveRankedPlaylist(playlistName, ranked);
     };
@@ -218,7 +232,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     showComparison(track, opponent);
   }
 
-  // --- Save Ranked Playlist ---
   async function saveRankedPlaylist(name, rankedTracks) {
     try {
       const resUser = await fetch("https://api.spotify.com/v1/me",{ headers:{ Authorization:`Bearer ${token}` }});
@@ -241,9 +254,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   // --- Start Ranking ---
   startRankingBtn.onclick=async()=>{
     const playlistId = playlistDropdown.value;
+    console.log("Selected playlist ID:", playlistId);
     const playlistTracks = await fetchPlaylistTracks(playlistId);
+    console.log("Fetched tracks:", playlistTracks);
+
+    if(playlistTracks.length < 2){
+      alert("Playlist needs at least 2 playable tracks to rank.");
+      return;
+    }
+
     initTracks(playlistTracks);
     const firstPair = pickTwoTracks();
+    console.log("First comparison pair:", firstPair);
     if(firstPair) showComparison(firstPair[0], firstPair[1]);
   };
 });
