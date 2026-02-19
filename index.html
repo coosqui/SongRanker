@@ -1,360 +1,269 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Song Ranker</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
-    button, select, input { margin: 10px; padding: 10px; font-size: 16px; }
-    #comparison button { width: 45%; }
-  </style>
-  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+<meta charset="UTF-8">
+<title>Song Ranker</title>
+<style>
+body { font-family: sans-serif; text-align: center; margin: 30px; }
+button, select, input { margin: 5px; padding: 8px; font-size: 14px; }
+#comparison button { width: 45%; }
+#trackList { max-height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; margin:10px;}
+.trackItem { cursor: pointer; padding: 3px; border-bottom:1px solid #eee;}
+.trackItem:hover { background:#f0f0f0; }
+.audioContainer { margin-top: 15px; }
+</style>
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
 </head>
 <body>
-  <h1>Song Ranker</h1>
+<h1>Song Ranker</h1>
 
-  <!-- Login / Logout -->
-  <button id="loginBtn">Login with Spotify</button>
-  <button id="logoutBtn">Logout</button>
+<!-- Login -->
+<button id="loginBtn">Login with Spotify</button>
+<button id="logoutBtn">Logout</button>
 
-  <!-- Create Playlist -->
-  <div id="createPlaylist">
-    <input type="text" id="newPlaylistName" placeholder="New playlist name" />
-    <button id="createPlaylistBtn">Create Playlist</button>
-  </div>
+<hr>
 
-  <!-- Source Type -->
-  <div>
-    <label>Source:</label>
-    <select id="sourceType">
-      <option value="playlist">Playlist</option>
-      <option value="album">Album</option>
-    </select>
-  </div>
+<!-- Create Playlist -->
+<div id="createPlaylistDiv">
+  <h3>Create Playlist</h3>
+  <input type="text" id="newPlaylistName" placeholder="Playlist Name">
+  <button id="createPlaylistBtn">Create Playlist</button>
+  <br>
+  <input type="text" id="songSearch" placeholder="Search Spotify for song/artist">
+  <button id="searchSongBtn">Search</button>
+  <div id="searchResults"></div>
+  <h4>Current Playlist Songs:</h4>
+  <div id="trackList"></div>
+</div>
 
-  <!-- Playlist / Album dropdown -->
-  <div id="playlistSelector">
-    <select id="playlistDropdown"></select>
-    <button id="startRankingBtn">Start Ranking</button>
-  </div>
+<hr>
 
-  <!-- Comparison buttons -->
-  <div id="comparison">
-    <button id="leftBtn" style="display:none;"></button>
-    <button id="rightBtn" style="display:none;"></button>
-  </div>
+<!-- Album Search -->
+<div>
+<h3>Or Search Album</h3>
+<input type="text" id="albumSearch" placeholder="Album Name">
+<button id="searchAlbumBtn">Search Album</button>
+<select id="albumResults"></select>
+</div>
 
-  <!-- Audio Player -->
-  <audio id="audioPlayer" controls style="display:none; margin:20px auto;"></audio>
+<hr>
 
-  <!-- Ranking overview -->
-  <div id="rankingOverview" style="margin-top:30px;"></div>
+<!-- Start Ranking -->
+<button id="startRankingBtn">Start Ranking</button>
+
+<!-- Comparison -->
+<div id="comparison">
+  <button id="leftBtn" style="display:none"></button>
+  <button id="rightBtn" style="display:none"></button>
+</div>
+
+<!-- Audio Player -->
+<div class="audioContainer">
+  <audio id="audioPlayer" controls style="display:none;"></audio>
+</div>
+
+<!-- Ranking Overview -->
+<div id="rankingOverview"></div>
 
 <script>
-document.addEventListener("DOMContentLoaded", async () => {
-  const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
-  const loginBtn = document.getElementById("loginBtn");
-  const logoutBtn = document.getElementById("logoutBtn");
-  const playlistDropdown = document.getElementById("playlistDropdown");
-  const startRankingBtn = document.getElementById("startRankingBtn");
-  const leftBtn = document.getElementById("leftBtn");
-  const rightBtn = document.getElementById("rightBtn");
-  const audioPlayer = document.getElementById("audioPlayer");
-  const rankingOverview = document.getElementById("rankingOverview");
-  const sourceTypeDropdown = document.getElementById("sourceType");
-  const newPlaylistName = document.getElementById("newPlaylistName");
-  const createPlaylistBtn = document.getElementById("createPlaylistBtn");
+document.addEventListener("DOMContentLoaded", async()=>{
 
-  let player, tracks = [], remainingTracks = [], comparisonHistory = [];
+const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
+const loginBtn=document.getElementById("loginBtn");
+const logoutBtn=document.getElementById("logoutBtn");
+const newPlaylistName=document.getElementById("newPlaylistName");
+const createPlaylistBtn=document.getElementById("createPlaylistBtn");
+const songSearch=document.getElementById("songSearch");
+const searchSongBtn=document.getElementById("searchSongBtn");
+const searchResults=document.getElementById("searchResults");
+const trackListDiv=document.getElementById("trackList");
+const albumSearch=document.getElementById("albumSearch");
+const searchAlbumBtn=document.getElementById("searchAlbumBtn");
+const albumResults=document.getElementById("albumResults");
+const startRankingBtn=document.getElementById("startRankingBtn");
+const leftBtn=document.getElementById("leftBtn");
+const rightBtn=document.getElementById("rightBtn");
+const audioPlayer=document.getElementById("audioPlayer");
+const rankingOverview=document.getElementById("rankingOverview");
 
-  // --- Login / Token Management ---
-  const params = new URLSearchParams(window.location.search);
-  const accessTokenFromUrl = params.get("access_token");
-  const refreshTokenFromUrl = params.get("refresh_token");
+let token = localStorage.getItem("spotifyToken");
+let player;
+let currentPlaylistTracks = [];
+let comparisonTracks = [];
+let comparisonHistory = [];
 
-  if (accessTokenFromUrl) localStorage.setItem("spotifyToken", accessTokenFromUrl);
-  if (refreshTokenFromUrl) localStorage.setItem("spotifyRefreshToken", refreshTokenFromUrl);
-  window.history.replaceState({}, document.title, window.location.pathname);
-
-  const token = localStorage.getItem("spotifyToken");
-  const refreshToken = localStorage.getItem("spotifyRefreshToken");
-
-  function initUI() {
-    if (token) {
-      loginBtn.style.display = "none";
-      logoutBtn.style.display = "inline-block";
-      playlistDropdown.disabled = false;
-      startRankingBtn.disabled = false;
-      newPlaylistName.disabled = false;
-      createPlaylistBtn.disabled = false;
-    } else {
-      loginBtn.style.display = "inline-block";
-      logoutBtn.style.display = "none";
-      playlistDropdown.disabled = true;
-      startRankingBtn.disabled = true;
-      newPlaylistName.disabled = true;
-      createPlaylistBtn.disabled = true;
-    }
+// --- Login/Logout ---
+const params=new URLSearchParams(window.location.search);
+const accessTokenFromUrl=params.get("token");
+if(accessTokenFromUrl){ localStorage.setItem("spotifyToken",accessTokenFromUrl); token=accessTokenFromUrl; window.history.replaceState({},document.title,window.location.pathname); }
+function initUI(){ 
+  if(token){
+    loginBtn.style.display="none"; logoutBtn.style.display="inline-block";
+    newPlaylistName.disabled=false; createPlaylistBtn.disabled=false;
+    songSearch.disabled=false; searchSongBtn.disabled=false;
+    albumSearch.disabled=false; searchAlbumBtn.disabled=false;
+    startRankingBtn.disabled=false;
+  }else{
+    loginBtn.style.display="inline-block"; logoutBtn.style.display="none";
+    newPlaylistName.disabled=true; createPlaylistBtn.disabled=true;
+    songSearch.disabled=true; searchSongBtn.disabled=true;
+    albumSearch.disabled=true; searchAlbumBtn.disabled=true;
+    startRankingBtn.disabled=true;
   }
+}
+initUI();
+loginBtn.onclick=()=>{ window.location.href=BACKEND_URL; };
+logoutBtn.onclick=()=>{ localStorage.removeItem("spotifyToken"); location.reload(); }
 
-  initUI();
-  loginBtn.onclick = () => window.location.href = BACKEND_URL;
-  logoutBtn.onclick = () => { localStorage.removeItem("spotifyToken"); localStorage.removeItem("spotifyRefreshToken"); location.reload(); }
-
-  // --- Spotify Web Playback SDK ---
-  function initSpotifyPlayer(token) {
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      player = new Spotify.Player({
-        name: "Song Ranker Player",
-        getOAuthToken: cb => cb(token),
-        volume: 0.5
-      });
-      player.addListener('ready', ({ device_id }) => window.spotifyDeviceId = device_id);
-      player.connect();
-    };
-  }
-
-  if (token) initSpotifyPlayer(token);
-
-  // --- Token Refresh ---
-  if (token && refreshToken) {
-    const TOKEN_EXPIRE_TIME = 3500 * 1000;
-    setTimeout(async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}?refresh=${refreshToken}`);
-        const data = await res.json();
-        if (data.access_token) {
-          localStorage.setItem("spotifyToken", data.access_token);
-          initSpotifyPlayer(data.access_token);
-        }
-      } catch (err) { localStorage.removeItem("spotifyToken"); localStorage.removeItem("spotifyRefreshToken"); location.reload(); }
-    }, TOKEN_EXPIRE_TIME);
-  }
-
-  // --- Fetch Playlists ---
-  async function fetchUserPlaylists() {
-    try {
-      const res = await fetch("https://api.spotify.com/v1/me/playlists", { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      return data.items;
-    } catch(err) {
-      console.error("Failed to fetch playlists:", err);
-      return [];
-    }
-  }
-
-  async function fetchUserAlbums() {
-    try {
-      const res = await fetch("https://api.spotify.com/v1/me/albums", { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      return data.items.map(item => item.album);
-    } catch(err) {
-      console.error("Failed to fetch albums:", err);
-      return [];
-    }
-  }
-
-  async function refreshDropdown() {
-    const playlists = await fetchUserPlaylists();
-    const albums = await fetchUserAlbums();
-    const options = [];
-
-    if (sourceTypeDropdown.value === "playlist") {
-      playlists.forEach(p => options.push(`<option value="${p.id}">${p.name}</option>`));
-    } else {
-      albums.forEach(a => options.push(`<option value="${a.id}">${a.name}</option>`));
-    }
-
-    playlistDropdown.innerHTML = options.join("");
-  }
-
-  if (token) refreshDropdown();
-
-  sourceTypeDropdown.onchange = refreshDropdown;
-
-  // --- Create Playlist ---
-  createPlaylistBtn.onclick = async () => {
-    const name = newPlaylistName.value.trim();
-    if (!name) return alert("Enter a playlist name");
-
-    try {
-      const resUser = await fetch("https://api.spotify.com/v1/me",{ headers:{ Authorization:`Bearer ${token}` }});
-      const userData = await resUser.json();
-      const userId = userData.id;
-
-      const resPlaylist = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
-        method: "POST",
-        headers: { Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
-        body: JSON.stringify({ name, description:"Created for ranking", public:false })
-      });
-      const playlist = await resPlaylist.json();
-      alert(`Playlist "${name}" created! Add songs in Spotify, then select it.`);
-      await refreshDropdown();
-    } catch(err) { console.error(err); alert("Failed to create playlist"); }
-  }
-
-  // --- Fetch Tracks ---
-  async function fetchPlaylistTracks(id) {
-    try {
-      const res = await fetch(`https://api.spotify.com/v1/playlists/${id}/tracks`, { headers:{ Authorization:`Bearer ${token}` } });
-      const data = await res.json();
-      const validTracks = data.items
-        .filter(i=>i.track && (i.track.uri || i.track.preview_url))
-        .map(i=>({
-          id: i.track.id || i.track.name + i.track.artists.map(a=>a.name).join(),
-          name: i.track.name,
-          artists: i.track.artists.map(a=>a.name),
-          uri: i.track.uri,
-          preview_url: i.track.preview_url,
-          elo: 1000
-        }));
-      console.log("Valid playlist tracks:", validTracks);
-      return validTracks;
-    } catch(err) { console.error(err); return []; }
-  }
-
-  async function fetchAlbumTracks(id) {
-    try {
-      const res = await fetch(`https://api.spotify.com/v1/albums/${id}/tracks`, { headers:{ Authorization:`Bearer ${token}` } });
-      const data = await res.json();
-      const validTracks = data.items
-        .filter(t=>t.uri || t.preview_url)
-        .map(t=>({
-          id: t.id || t.name + t.artists.map(a=>a.name).join(),
-          name: t.name,
-          artists: t.artists.map(a=>a.name),
-          uri: t.uri,
-          preview_url: t.preview_url,
-          elo: 1000
-        }));
-      console.log("Valid album tracks:", validTracks);
-      return validTracks;
-    } catch(err) { console.error(err); return []; }
-  }
-
-  // --- Elo Functions ---
-  function updateElo(winner, loser, k=32){
-    const expectedWinner = 1/(1+Math.pow(10,(loser.elo-winner.elo)/400));
-    const expectedLoser = 1/(1+Math.pow(10,(winner.elo-loser.elo)/400));
-    winner.elo += k*(1-expectedWinner);
-    loser.elo += k*(0-expectedLoser);
-  }
-
-  // --- Comparison ---
-  function initTracks(trackList){ tracks=trackList; remainingTracks=[...tracks]; comparisonHistory=[]; }
-
-  function pickTwoTracks(){ 
-    if(remainingTracks.length<2) return null; 
-    const shuffled=remainingTracks.sort(()=>0.5-Math.random()); 
-    return [shuffled[0], shuffled[1]]; 
-  }
-
-  async function playTrack(track){
-    if(player && window.spotifyDeviceId && track.uri){
-      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${window.spotifyDeviceId}`, {
-        method:"PUT", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" }, body:JSON.stringify({uris:[track.uri]})
-      });
-    } else if(track.preview_url){ audioPlayer.src=track.preview_url; audioPlayer.play(); } 
-    else audioPlayer.src="";
-  }
-
-  function showComparison(trackA, trackB){
-    console.log("Comparing:", trackA, trackB);
-    leftBtn.textContent=`${trackA.name} - ${trackA.artists.join(", ")}`;
-    rightBtn.textContent=`${trackB.name} - ${trackB.artists.join(", ")}`;
-    leftBtn.style.display="inline-block";
-    rightBtn.style.display="inline-block";
-    audioPlayer.style.display="block";
-    leftBtn.onclick = ()=>handleChoice(trackA.id, trackB.id);
-    rightBtn.onclick = ()=>handleChoice(trackB.id, trackA.id);
-    leftBtn.onmouseenter=()=>playTrack(trackA);
-    rightBtn.onmouseenter=()=>playTrack(trackB);
-  }
-
-  function handleChoice(winnerId, loserId){
-    const winner = tracks.find(t=>t.id===winnerId);
-    const loser = tracks.find(t=>t.id===loserId);
-    updateElo(winner, loser);
-    comparisonHistory.push({winnerId, loserId});
-    const nextPair = pickTwoTracks();
-    if(nextPair) showComparison(nextPair[0], nextPair[1]);
-    else showRankingOverview();
-  }
-
-  function showRankingOverview(){
-    rankingOverview.innerHTML="<h2>Ranking Overview</h2>";
-    const ranked = [...tracks].sort((a,b)=>b.elo-a.elo);
-    ranked.forEach((t,i)=>{
-      const div=document.createElement("div");
-      div.innerHTML = `${i+1}. ${t.name} - ${t.artists.join(", ")} (Elo: ${Math.round(t.elo)})`;
-      const btn=document.createElement("button");
-      btn.textContent="Adjust";
-      btn.onclick=()=>reviewSong(t.id);
-      div.appendChild(btn);
-      rankingOverview.appendChild(div);
+// --- Spotify Player ---
+function initSpotifyPlayer(token){
+  window.onSpotifyWebPlaybackSDKReady=()=>{
+    player=new Spotify.Player({
+      name:"Song Ranker Player",
+      getOAuthToken:cb=>cb(token),
+      volume:0.5
     });
-
-    const saveBtn=document.createElement("button");
-    saveBtn.textContent="Save Ranked Playlist to Spotify";
-    saveBtn.onclick=()=> {
-      const playlistName = prompt("Enter a name for your ranked playlist:","My Ranked Playlist");
-      if(playlistName) saveRankedPlaylist(playlistName, ranked);
-    };
-    rankingOverview.appendChild(saveBtn);
-
-    leftBtn.style.display="none";
-    rightBtn.style.display="none";
-    audioPlayer.style.display="none";
+    player.addListener('ready',({device_id})=>window.spotifyDeviceId=device_id);
+    player.connect();
   }
+}
+if(token)initSpotifyPlayer(token);
 
-  function reviewSong(trackId){
-    const track = tracks.find(t=>t.id===trackId);
-    const opponents = tracks.filter(t=>t.id!==trackId);
-    const opponent = opponents[Math.floor(Math.random()*opponents.length)];
-    leftBtn.style.display="inline-block";
-    rightBtn.style.display="inline-block";
-    audioPlayer.style.display="block";
-    rankingOverview.innerHTML="";
-    showComparison(track, opponent);
-  }
+// --- Create Playlist + Add Songs ---
+createPlaylistBtn.onclick=()=>{
+  const name=newPlaylistName.value.trim();
+  if(!name) return alert("Enter a playlist name.");
+  currentPlaylistTracks=[]; trackListDiv.innerHTML="";
+  alert(`Playlist "${name}" created locally. Add songs below.`);
+}
 
-  async function saveRankedPlaylist(name, rankedTracks){
-    try{
-      const resUser = await fetch("https://api.spotify.com/v1/me",{ headers:{ Authorization:`Bearer ${token}` }});
-      const userData = await resUser.json();
-      const userId = userData.id;
-      const resPlaylist = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`,{
-        method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
-        body:JSON.stringify({name,description:"Playlist ranked with Song Ranker",public:false})
-      });
-      const playlist = await resPlaylist.json();
-      const uris = rankedTracks.map(t=>t.uri);
-      await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`,{
-        method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
-        body:JSON.stringify({uris})
-      });
-      alert(`Playlist "${name}" created in Spotify!`);
-    }catch(err){ console.error(err); alert("Failed to save playlist."); }
-  }
+// --- Search Spotify Songs ---
+searchSongBtn.onclick=async()=>{
+  const q=songSearch.value.trim();
+  if(!q) return;
+  try{
+    const res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10`,{
+      headers:{Authorization:`Bearer ${token}`}
+    });
+    const data=await res.json();
+    const tracks=data.tracks.items;
+    searchResults.innerHTML=tracks.map(t=>`<div class="trackItem" data-id="${t.id}" data-uri="${t.uri}" data-preview="${t.preview_url}" data-name="${t.name}" data-artists="${t.artists.map(a=>a.name).join(", ")}">${t.name} - ${t.artists.map(a=>a.name).join(", ")}</div>`).join("");
+    document.querySelectorAll(".trackItem").forEach(div=>{
+      div.onclick=()=>{
+        const track={ id: div.dataset.id, uri: div.dataset.uri, preview_url: div.dataset.preview, name: div.dataset.name, artists: div.dataset.artists.split(", "), elo:1000, playable: !!(div.dataset.uri || div.dataset.preview) };
+        currentPlaylistTracks.push(track);
+        trackListDiv.innerHTML=currentPlaylistTracks.map(t=>t.name+" - "+t.artists.join(", ")).join("<br>");
+      }
+    });
+  }catch(err){ console.error(err); alert("Song search failed"); }
+}
 
-  // --- Start Ranking ---
-  startRankingBtn.onclick=async()=>{
-    const sourceType = sourceTypeDropdown.value;
-    const sourceId = playlistDropdown.value;
+// --- Search Albums ---
+searchAlbumBtn.onclick=async()=>{
+  const q=albumSearch.value.trim();
+  if(!q) return;
+  try{
+    const res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=album&limit=10`,{
+      headers:{Authorization:`Bearer ${token}`}
+    });
+    const data=await res.json();
+    const albums=data.albums.items;
+    albumResults.innerHTML=albums.map(a=>`<option value="${a.id}">${a.name} - ${a.artists.map(ar=>ar.name).join(", ")}</option>`).join("");
+  }catch(err){ console.error(err); alert("Album search failed"); }
+}
 
-    let playlistTracks = [];
-    if(sourceType==="playlist") playlistTracks = await fetchPlaylistTracks(sourceId);
-    else if(sourceType==="album") playlistTracks = await fetchAlbumTracks(sourceId);
+// --- Fetch Album Tracks ---
+async function fetchAlbumTracks(albumId){
+  try{
+    const res=await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks`,{ headers:{ Authorization:`Bearer ${token}`}});
+    const data=await res.json();
+    return data.items.map(t=>({ id:t.id, name:t.name, artists:t.artists.map(a=>a.name), uri:t.uri, preview_url:t.preview_url, playable: !!(t.uri||t.preview_url), elo:1000 }));
+  }catch(err){ console.error(err); return []; }
+}
 
-    if(playlistTracks.length<2){
-      alert("Need at least 2 playable tracks to rank.");
-      return;
-    }
+// --- Elo & Comparison ---
+function updateElo(winner,loser,k=32){
+  const ew=1/(1+Math.pow(10,(loser.elo-winner.elo)/400));
+  const el=1/(1+Math.pow(10,(winner.elo-loser.elo)/400));
+  winner.elo += k*(1-ew); loser.elo += k*(0-el);
+}
+function pickTwo(){ if(comparisonTracks.length<2) return null; const shuffled=[...comparisonTracks].sort(()=>0.5-Math.random()); return [shuffled[0],shuffled[1]]; }
+async function playTrack(track){
+  if(player && window.spotifyDeviceId && track.uri){ await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${window.spotifyDeviceId}`, { method:"PUT", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json"}, body:JSON.stringify({uris:[track.uri]}) }); }
+  else if(track.preview_url){ audioPlayer.src=track.preview_url; audioPlayer.play(); }
+  else audioPlayer.src="";
+}
 
-    initTracks(playlistTracks);
-    const firstPair = pickTwoTracks();
-    if(firstPair) showComparison(firstPair[0], firstPair[1]);
-  };
+function showComparison(trackA,trackB){
+  leftBtn.textContent=trackA.name+" - "+trackA.artists.join(", ") + (trackA.playable?"":" ⚠️");
+  rightBtn.textContent=trackB.name+" - "+trackB.artists.join(", ") + (trackB.playable?"":" ⚠️");
+  leftBtn.style.display="inline-block"; rightBtn.style.display="inline-block"; audioPlayer.style.display="block";
+  leftBtn.onclick=()=>handleChoice(trackA.id,trackB.id);
+  rightBtn.onclick=()=>handleChoice(trackB.id,trackA.id);
+  leftBtn.onmouseenter=()=>{ if(trackA.playable) playTrack(trackA); };
+  rightBtn.onmouseenter=()=>{ if(trackB.playable) playTrack(trackB); };
+}
+
+function handleChoice(winnerId,loserId){
+  const winner=comparisonTracks.find(t=>t.id===winnerId);
+  const loser=comparisonTracks.find(t=>t.id===loserId);
+  updateElo(winner,loser);
+  comparisonHistory.push({winnerId,loserId});
+  const nextPair=pickTwo();
+  if(nextPair) showComparison(nextPair[0],nextPair[1]);
+  else showRankingOverview();
+}
+
+function showRankingOverview(){
+  rankingOverview.innerHTML="<h2>Ranking Overview</h2>";
+  const ranked=[...comparisonTracks].sort((a,b)=>b.elo-a.elo);
+  ranked.forEach((t,i)=>{
+    const div=document.createElement("div");
+    div.innerHTML=(i+1)+". "+t.name+" - "+t.artists.join(", ")+" (Elo:"+Math.round(t.elo)+")";
+    const btn=document.createElement("button"); btn.textContent="Adjust";
+    btn.onclick=()=>reviewSong(t.id);
+    div.appendChild(btn);
+    rankingOverview.appendChild(div);
+  });
+  const saveBtn=document.createElement("button"); saveBtn.textContent="Save Ranked Playlist to Spotify";
+  saveBtn.onclick=()=>{ const name=prompt("Name your ranked playlist:","My Ranked Playlist"); if(name) saveRankedPlaylist(name,[...comparisonTracks].sort((a,b)=>b.elo-a.elo)); };
+  rankingOverview.appendChild(saveBtn);
+  leftBtn.style.display="none"; rightBtn.style.display="none"; audioPlayer.style.display="none";
+}
+
+function reviewSong(trackId){
+  const track=comparisonTracks.find(t=>t.id===trackId);
+  const others=comparisonTracks.filter(t=>t.id!==trackId);
+  const opponent=others[Math.floor(Math.random()*others.length)];
+  leftBtn.style.display="inline-block"; rightBtn.style.display="inline-block"; audioPlayer.style.display="block";
+  rankingOverview.innerHTML="";
+  showComparison(track,opponent);
+}
+
+async function saveRankedPlaylist(name,rankedTracks){
+  try{
+    const resUser=await fetch("https://api.spotify.com/v1/me",{ headers:{Authorization:`Bearer ${token}`}});
+    const userData=await resUser.json();
+    const userId=userData.id;
+    const resPlaylist=await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`,{ method:"POST", headers:{Authorization:`Bearer ${token}`, "Content-Type":"application/json"}, body:JSON.stringify({name,description:"Playlist ranked with Song Ranker",public:false}) });
+    const playlist=await resPlaylist.json();
+    const uris=rankedTracks.map(t=>t.uri).filter(Boolean);
+    if(uris.length>0) await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`,{ method:"POST", headers:{Authorization:`Bearer ${token}`, "Content-Type":"application/json"}, body:JSON.stringify({uris}) });
+    alert(`Playlist "${name}" saved to Spotify!`);
+  }catch(err){ console.error(err); alert("Failed to save playlist."); }
+}
+
+// --- Start Ranking ---
+startRankingBtn.onclick=async()=>{
+  let tracksToRank=[];
+  if(currentPlaylistTracks.length>0) tracksToRank=currentPlaylistTracks;
+  else if(albumResults.value){ tracksToRank=await fetchAlbumTracks(albumResults.value); }
+  if(tracksToRank.length<2){ alert("Need at least 2 tracks to rank."); return; }
+  comparisonTracks=[...tracksToRank];
+  comparisonHistory=[];
+  const firstPair=pickTwo();
+  if(firstPair) showComparison(firstPair[0],firstPair[1]);
+}
 
 });
 </script>
