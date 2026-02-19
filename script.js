@@ -1,58 +1,53 @@
 document.addEventListener("DOMContentLoaded", () => {
   const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
   const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
 
-  // Optional: Logout-Button erstellen, falls noch nicht im HTML
-  let logoutBtn = document.getElementById("logoutBtn");
-  if (!logoutBtn) {
-    logoutBtn = document.createElement("button");
-    logoutBtn.id = "logoutBtn";
-    logoutBtn.textContent = "Logout";
-    logoutBtn.style.margin = "10px";
-    logoutBtn.style.padding = "10px 20px";
-    logoutBtn.style.fontSize = "16px";
-    document.body.appendChild(logoutBtn);
-  }
-
-  // 1️⃣ Token aus URL holen
   const params = new URLSearchParams(window.location.search);
-  const tokenFromUrl = params.get("token");
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token");
 
-  if (tokenFromUrl) {
-    localStorage.setItem("spotifyToken", tokenFromUrl);
-    // URL bereinigen
-    const cleanUrl = window.location.origin + window.location.pathname;
-    window.history.replaceState({}, document.title, cleanUrl);
-  }
+  if (accessToken) localStorage.setItem("spotifyToken", accessToken);
+  if (refreshToken) localStorage.setItem("spotifyRefreshToken", refreshToken);
 
-  // 2️⃣ Prüfen, ob Token existiert
+  // URL bereinigen
+  window.history.replaceState({}, document.title, window.location.pathname);
+
   const token = localStorage.getItem("spotifyToken");
+  const refresh = localStorage.getItem("spotifyRefreshToken");
 
+  // Auto-Redirect & Button Management
   if (token) {
-    // Token existiert → Button ausblenden
     if (loginBtn) loginBtn.style.display = "none";
+    if (logoutBtn) logoutBtn.style.display = "inline-block";
 
-    // Logout-Button sichtbar machen
-    logoutBtn.style.display = "inline-block";
-
-    // Optional: direkt zur App-Seite, falls noch nicht dort
     if (window.location.pathname !== "/SongRanker/") {
       window.location.href = "/SongRanker/";
     }
-  } else {
-    // Kein Token → Login-Button sichtbar
-    if (loginBtn) loginBtn.style.display = "inline-block";
-    if (loginBtn) loginBtn.onclick = () => {
-      window.location.href = BACKEND_URL;
-    };
 
-    // Logout-Button ausblenden
-    logoutBtn.style.display = "none";
+    // Optionally: Refresh Access Token nach Ablauf
+    const TOKEN_EXPIRE_TIME = 3500 * 1000; // Spotify ~3600s, wir refreshen nach 3500s
+    setTimeout(async () => {
+      if (refresh) {
+        const res = await fetch(`${BACKEND_URL}?refresh=${refresh}`);
+        const data = await res.json();
+        if (data.access_token) localStorage.setItem("spotifyToken", data.access_token);
+        // optional: Seite neu laden oder API Calls fortsetzen
+      }
+    }, TOKEN_EXPIRE_TIME);
+  } else {
+    if (loginBtn) {
+      loginBtn.style.display = "inline-block";
+      loginBtn.onclick = () => (window.location.href = BACKEND_URL);
+    }
+    if (logoutBtn) logoutBtn.style.display = "none";
   }
 
-  // 3️⃣ Logout-Funktion
-  logoutBtn.onclick = () => {
-    localStorage.removeItem("spotifyToken"); // Token löschen
-    window.location.href = "/SongRanker/";    // Optional: Seite neu laden oder zurück zur Login-Seite
-  };
+  if (logoutBtn) {
+    logoutBtn.onclick = () => {
+      localStorage.removeItem("spotifyToken");
+      localStorage.removeItem("spotifyRefreshToken");
+      window.location.href = "/SongRanker/";
+    };
+  }
 });
