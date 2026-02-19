@@ -1,39 +1,32 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
+  <meta charset="UTF-8">
   <title>Song Ranker</title>
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
-    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
   <h1>Song Ranker</h1>
   <button id="loginBtn" type="button">Login with Spotify</button>
+
   <div id="playlistPicker"></div>
+
   <div id="comparison" style="margin-top:20px;">
     <button id="leftBtn"></button>
     <button id="rightBtn"></button>
   </div>
+
   <script src="script.js"></script>
-
-  <script>
-const params = new URLSearchParams(window.location.search);
-const token = params.get("token");
-
-if (token) {
-  localStorage.setItem("spotifyToken", token);
-
-  // IMPORTANT — redirect to correct GitHub Pages path
-  window.location.href = "/SongRanker/";
-}
-</script>
 </body>
 </html>
-
-
-
-
-
-
-
