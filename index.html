@@ -5,8 +5,8 @@
   <title>Song Ranker</title>
   <style>
     body { font-family: sans-serif; text-align: center; margin-top: 50px; }
-    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
-    select { font-size: 16px; margin: 20px; }
+    button, select, input { margin: 10px; padding: 10px; font-size: 16px; }
+    #comparison button { width: 45%; }
   </style>
   <script src="https://sdk.scdn.co/spotify-player.js"></script>
 </head>
@@ -17,14 +17,29 @@
   <button id="loginBtn">Login with Spotify</button>
   <button id="logoutBtn">Logout</button>
 
-  <!-- Playlist selection -->
-  <div id="playlistSelector" style="margin-top:20px;">
+  <!-- Create Playlist -->
+  <div id="createPlaylist">
+    <input type="text" id="newPlaylistName" placeholder="New playlist name" />
+    <button id="createPlaylistBtn">Create Playlist</button>
+  </div>
+
+  <!-- Source Type -->
+  <div>
+    <label>Source:</label>
+    <select id="sourceType">
+      <option value="playlist">Playlist</option>
+      <option value="album">Album</option>
+    </select>
+  </div>
+
+  <!-- Playlist / Album dropdown -->
+  <div id="playlistSelector">
     <select id="playlistDropdown"></select>
     <button id="startRankingBtn">Start Ranking</button>
   </div>
 
   <!-- Comparison buttons -->
-  <div id="comparison" style="margin-top:20px;">
+  <div id="comparison">
     <button id="leftBtn" style="display:none;"></button>
     <button id="rightBtn" style="display:none;"></button>
   </div>
@@ -46,6 +61,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const rightBtn = document.getElementById("rightBtn");
   const audioPlayer = document.getElementById("audioPlayer");
   const rankingOverview = document.getElementById("rankingOverview");
+  const sourceTypeDropdown = document.getElementById("sourceType");
+  const newPlaylistName = document.getElementById("newPlaylistName");
+  const createPlaylistBtn = document.getElementById("createPlaylistBtn");
 
   let player, tracks = [], remainingTracks = [], comparisonHistory = [];
 
@@ -67,11 +85,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       logoutBtn.style.display = "inline-block";
       playlistDropdown.disabled = false;
       startRankingBtn.disabled = false;
+      newPlaylistName.disabled = false;
+      createPlaylistBtn.disabled = false;
     } else {
       loginBtn.style.display = "inline-block";
       logoutBtn.style.display = "none";
       playlistDropdown.disabled = true;
       startRankingBtn.disabled = true;
+      newPlaylistName.disabled = true;
+      createPlaylistBtn.disabled = true;
     }
   }
 
@@ -117,86 +139,150 @@ document.addEventListener("DOMContentLoaded", async () => {
       return data.items;
     } catch(err) {
       console.error("Failed to fetch playlists:", err);
-      alert("Could not fetch playlists. Please check your login.");
       return [];
     }
   }
 
-  if (token) {
+  async function fetchUserAlbums() {
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me/albums", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      return data.items.map(item => item.album);
+    } catch(err) {
+      console.error("Failed to fetch albums:", err);
+      return [];
+    }
+  }
+
+  async function refreshDropdown() {
     const playlists = await fetchUserPlaylists();
-    playlistDropdown.innerHTML = playlists.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    const albums = await fetchUserAlbums();
+    const options = [];
+
+    if (sourceTypeDropdown.value === "playlist") {
+      playlists.forEach(p => options.push(`<option value="${p.id}">${p.name}</option>`));
+    } else {
+      albums.forEach(a => options.push(`<option value="${a.id}">${a.name}</option>`));
+    }
+
+    playlistDropdown.innerHTML = options.join("");
+  }
+
+  if (token) refreshDropdown();
+
+  sourceTypeDropdown.onchange = refreshDropdown;
+
+  // --- Create Playlist ---
+  createPlaylistBtn.onclick = async () => {
+    const name = newPlaylistName.value.trim();
+    if (!name) return alert("Enter a playlist name");
+
+    try {
+      const resUser = await fetch("https://api.spotify.com/v1/me",{ headers:{ Authorization:`Bearer ${token}` }});
+      const userData = await resUser.json();
+      const userId = userData.id;
+
+      const resPlaylist = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
+        method: "POST",
+        headers: { Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body: JSON.stringify({ name, description:"Created for ranking", public:false })
+      });
+      const playlist = await resPlaylist.json();
+      alert(`Playlist "${name}" created! Add songs in Spotify, then select it.`);
+      await refreshDropdown();
+    } catch(err) { console.error(err); alert("Failed to create playlist"); }
   }
 
   // --- Fetch Tracks ---
-  async function fetchPlaylistTracks(playlistId) {
+  async function fetchPlaylistTracks(id) {
     try {
-      const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`https://api.spotify.com/v1/playlists/${id}/tracks`, { headers:{ Authorization:`Bearer ${token}` } });
       const data = await res.json();
-      const validTracks = data.items.filter(i => i.track).map(i => ({
-        id: i.track.id,
-        name: i.track.name,
-        artists: i.track.artists.map(a => a.name),
-        uri: i.track.uri,
-        preview_url: i.track.preview_url,
-        elo: 1000
-      }));
+      const validTracks = data.items
+        .filter(i=>i.track && (i.track.uri || i.track.preview_url))
+        .map(i=>({
+          id: i.track.id || i.track.name + i.track.artists.map(a=>a.name).join(),
+          name: i.track.name,
+          artists: i.track.artists.map(a=>a.name),
+          uri: i.track.uri,
+          preview_url: i.track.preview_url,
+          elo: 1000
+        }));
+      console.log("Valid playlist tracks:", validTracks);
       return validTracks;
-    } catch(err) { console.error("Failed to fetch tracks:", err); return []; }
+    } catch(err) { console.error(err); return []; }
+  }
+
+  async function fetchAlbumTracks(id) {
+    try {
+      const res = await fetch(`https://api.spotify.com/v1/albums/${id}/tracks`, { headers:{ Authorization:`Bearer ${token}` } });
+      const data = await res.json();
+      const validTracks = data.items
+        .filter(t=>t.uri || t.preview_url)
+        .map(t=>({
+          id: t.id || t.name + t.artists.map(a=>a.name).join(),
+          name: t.name,
+          artists: t.artists.map(a=>a.name),
+          uri: t.uri,
+          preview_url: t.preview_url,
+          elo: 1000
+        }));
+      console.log("Valid album tracks:", validTracks);
+      return validTracks;
+    } catch(err) { console.error(err); return []; }
   }
 
   // --- Elo Functions ---
-  function updateElo(winner, loser, k=32) {
-    const expectedWinner = 1 / (1 + Math.pow(10, (loser.elo - winner.elo)/400));
-    const expectedLoser = 1 / (1 + Math.pow(10, (winner.elo - loser.elo)/400));
+  function updateElo(winner, loser, k=32){
+    const expectedWinner = 1/(1+Math.pow(10,(loser.elo-winner.elo)/400));
+    const expectedLoser = 1/(1+Math.pow(10,(winner.elo-loser.elo)/400));
     winner.elo += k*(1-expectedWinner);
     loser.elo += k*(0-expectedLoser);
   }
 
   // --- Comparison ---
-  function initTracks(trackList) { tracks = trackList; remainingTracks = [...tracks]; comparisonHistory = []; }
+  function initTracks(trackList){ tracks=trackList; remainingTracks=[...tracks]; comparisonHistory=[]; }
 
-  function pickTwoTracks() {
-    if (remainingTracks.length < 2) return null;
-    const shuffled = remainingTracks.sort(() => 0.5 - Math.random());
-    return [shuffled[0], shuffled[1]];
+  function pickTwoTracks(){ 
+    if(remainingTracks.length<2) return null; 
+    const shuffled=remainingTracks.sort(()=>0.5-Math.random()); 
+    return [shuffled[0], shuffled[1]]; 
   }
 
-  async function playTrack(track) {
-    if (player && window.spotifyDeviceId) {
+  async function playTrack(track){
+    if(player && window.spotifyDeviceId && track.uri){
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${window.spotifyDeviceId}`, {
         method:"PUT", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" }, body:JSON.stringify({uris:[track.uri]})
       });
-    } else if (track.preview_url) { audioPlayer.src = track.preview_url; audioPlayer.play(); }
-    else audioPlayer.src = "";
+    } else if(track.preview_url){ audioPlayer.src=track.preview_url; audioPlayer.play(); } 
+    else audioPlayer.src="";
   }
 
-  function showComparison(trackA, trackB) {
-    console.log("Comparing tracks:", trackA, trackB);
-    leftBtn.textContent = `${trackA.name} - ${trackA.artists.join(", ")}`;
-    rightBtn.textContent = `${trackB.name} - ${trackB.artists.join(", ")}`;
-    leftBtn.style.display = "inline-block";
-    rightBtn.style.display = "inline-block";
-    audioPlayer.style.display = "block";
-
-    leftBtn.onclick = () => handleChoice(trackA.id, trackB.id);
-    rightBtn.onclick = () => handleChoice(trackB.id, trackA.id);
-    leftBtn.onmouseenter = () => playTrack(trackA);
-    rightBtn.onmouseenter = () => playTrack(trackB);
+  function showComparison(trackA, trackB){
+    console.log("Comparing:", trackA, trackB);
+    leftBtn.textContent=`${trackA.name} - ${trackA.artists.join(", ")}`;
+    rightBtn.textContent=`${trackB.name} - ${trackB.artists.join(", ")}`;
+    leftBtn.style.display="inline-block";
+    rightBtn.style.display="inline-block";
+    audioPlayer.style.display="block";
+    leftBtn.onclick = ()=>handleChoice(trackA.id, trackB.id);
+    rightBtn.onclick = ()=>handleChoice(trackB.id, trackA.id);
+    leftBtn.onmouseenter=()=>playTrack(trackA);
+    rightBtn.onmouseenter=()=>playTrack(trackB);
   }
 
-  function handleChoice(winnerId, loserId) {
+  function handleChoice(winnerId, loserId){
     const winner = tracks.find(t=>t.id===winnerId);
     const loser = tracks.find(t=>t.id===loserId);
     updateElo(winner, loser);
     comparisonHistory.push({winnerId, loserId});
     const nextPair = pickTwoTracks();
-    if (nextPair) showComparison(nextPair[0], nextPair[1]);
+    if(nextPair) showComparison(nextPair[0], nextPair[1]);
     else showRankingOverview();
   }
 
-  // --- Ranking Overview ---
-  function showRankingOverview() {
-    rankingOverview.innerHTML = "<h2>Ranking Overview</h2>";
+  function showRankingOverview(){
+    rankingOverview.innerHTML="<h2>Ranking Overview</h2>";
     const ranked = [...tracks].sort((a,b)=>b.elo-a.elo);
     ranked.forEach((t,i)=>{
       const div=document.createElement("div");
@@ -208,7 +294,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       rankingOverview.appendChild(div);
     });
 
-    const saveBtn = document.createElement("button");
+    const saveBtn=document.createElement("button");
     saveBtn.textContent="Save Ranked Playlist to Spotify";
     saveBtn.onclick=()=> {
       const playlistName = prompt("Enter a name for your ranked playlist:","My Ranked Playlist");
@@ -221,10 +307,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     audioPlayer.style.display="none";
   }
 
-  function reviewSong(trackId) {
-    const track=tracks.find(t=>t.id===trackId);
-    const opponents=tracks.filter(t=>t.id!==trackId);
-    const opponent=opponents[Math.floor(Math.random()*opponents.length)];
+  function reviewSong(trackId){
+    const track = tracks.find(t=>t.id===trackId);
+    const opponents = tracks.filter(t=>t.id!==trackId);
+    const opponent = opponents[Math.floor(Math.random()*opponents.length)];
     leftBtn.style.display="inline-block";
     rightBtn.style.display="inline-block";
     audioPlayer.style.display="block";
@@ -232,42 +318,44 @@ document.addEventListener("DOMContentLoaded", async () => {
     showComparison(track, opponent);
   }
 
-  async function saveRankedPlaylist(name, rankedTracks) {
-    try {
+  async function saveRankedPlaylist(name, rankedTracks){
+    try{
       const resUser = await fetch("https://api.spotify.com/v1/me",{ headers:{ Authorization:`Bearer ${token}` }});
       const userData = await resUser.json();
       const userId = userData.id;
-      const resPlaylist = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
+      const resPlaylist = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`,{
         method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
-        body:JSON.stringify({name:name,description:"Playlist ranked with Song Ranker",public:false})
+        body:JSON.stringify({name,description:"Playlist ranked with Song Ranker",public:false})
       });
       const playlist = await resPlaylist.json();
       const uris = rankedTracks.map(t=>t.uri);
-      await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+      await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`,{
         method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
         body:JSON.stringify({uris})
       });
-      alert(`Playlist "${name}" created successfully in your Spotify account!`);
-    } catch(err){ console.error(err); alert("Failed to save playlist. Make sure you are logged in."); }
+      alert(`Playlist "${name}" created in Spotify!`);
+    }catch(err){ console.error(err); alert("Failed to save playlist."); }
   }
 
   // --- Start Ranking ---
   startRankingBtn.onclick=async()=>{
-    const playlistId = playlistDropdown.value;
-    console.log("Selected playlist ID:", playlistId);
-    const playlistTracks = await fetchPlaylistTracks(playlistId);
-    console.log("Fetched tracks:", playlistTracks);
+    const sourceType = sourceTypeDropdown.value;
+    const sourceId = playlistDropdown.value;
 
-    if(playlistTracks.length < 2){
-      alert("Playlist needs at least 2 playable tracks to rank.");
+    let playlistTracks = [];
+    if(sourceType==="playlist") playlistTracks = await fetchPlaylistTracks(sourceId);
+    else if(sourceType==="album") playlistTracks = await fetchAlbumTracks(sourceId);
+
+    if(playlistTracks.length<2){
+      alert("Need at least 2 playable tracks to rank.");
       return;
     }
 
     initTracks(playlistTracks);
     const firstPair = pickTwoTracks();
-    console.log("First comparison pair:", firstPair);
     if(firstPair) showComparison(firstPair[0], firstPair[1]);
   };
+
 });
 </script>
 </body>
