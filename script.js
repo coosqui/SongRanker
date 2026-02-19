@@ -1,19 +1,16 @@
-const BACKEND_URL = "https://song-ranker-chi.vercel.app/api/spotify";
+const BACKEND_URL = "/api/spotify";
 
+// LOGIN BUTTON
 document.getElementById("loginBtn").onclick = () => {
   window.location.href = BACKEND_URL;
 };
 
-// Handle callback with code
-const urlParams = new URLSearchParams(window.location.search);
-const code = urlParams.get("code");
+// HANDLE REDIRECT TOKEN
+const params = new URLSearchParams(window.location.search);
+const token = params.get("token");
 
-if (code) {
-  fetch(`${BACKEND_URL}?code=${code}`)
-    .then(res => res.json())
-    .then(data => {
-      localStorage.setItem("spotifyToken", data.access_token);
-      window.history.replaceState({}, document.title, "/");
-      location.reload();
-    });
+if (token) {
+  localStorage.setItem("spotifyToken", token);
+  window.history.replaceState({}, document.title, "/");
+  location.reload();
 }

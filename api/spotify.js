@@ -1,11 +1,12 @@
 export default async function handler(req, res) {
-  const CLIENT_ID = "ebfc630b5e9d46d7aca0d68e8f4045a1";
-  const CLIENT_SECRET = "8317a110b5ae45c8bbc5e4641aa1b7e3";
-  const REDIRECT_URI = "https://coosqui.github.io/SongRanker/";
+  const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+  const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+
+  const REDIRECT_URI = "https://song-ranker-chi.vercel.app/api/spotify";
 
   const { code } = req.query;
 
-  // STEP 1 — Redirect to Spotify login
+  // STEP 1 — Send user to Spotify login
   if (!code) {
     const scope = "playlist-read-private playlist-modify-private";
 
@@ -23,7 +24,7 @@ export default async function handler(req, res) {
   // STEP 2 — Exchange code for token
   const body = new URLSearchParams({
     grant_type: "authorization_code",
-    code: code,
+    code,
     redirect_uri: REDIRECT_URI,
   });
 
@@ -42,11 +43,6 @@ export default async function handler(req, res) {
 
   const data = await tokenRes.json();
 
-  // STEP 3 — Send token back to frontend
-  res.redirect(
-    REDIRECT_URI +
-      "?token=" +
-      data.access_token
-  );
+  // STEP 3 — Redirect back to your GitHub site
+  res.redirect("https://coosqui.github.io/SongRanker/?token=" + data.access_token);
 }
-

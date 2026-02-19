@@ -16,5 +16,24 @@
     <button id="rightBtn"></button>
   </div>
   <script src="script.js"></script>
+
+  <script>
+const params = new URLSearchParams(window.location.search);
+const token = params.get("token");
+
+if (token) {
+  localStorage.setItem("spotifyToken", token);
+
+  // IMPORTANT — redirect to correct GitHub Pages path
+  window.location.href = "/SongRanker/";
+}
+</script>
 </body>
 </html>
+
+
+
+
+
+
+
